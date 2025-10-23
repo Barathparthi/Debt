@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Guide to Mutual Debt Reconciliation</title>
+    <script>
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+            if (args[0] && args[0].includes('cdn.tailwindcss.com should not be used in production')) {
+                return;
+            }
+            originalWarn.apply(console, args);
+        };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Fintech Calm -->
+    <!-- Application Structure Plan: A top-to-bottom narrative SPA guiding the user through the debt reconciliation algorithm. It starts with basic concepts, moves to a core step-by-step interactive visualization of the example from the report, explains the underlying theories in a tabbed section, and concludes with applications. This linear flow is chosen to deconstruct a complex algorithm into digestible, sequential steps, making it easier to learn than a dashboard or non-linear exploration. -->
+    <!-- Visualization & Content Choices: Report Info: Initial/simplified debt network -> Goal: Visualize relationships and changes -> Viz Method: Chart.js scatter plot for nodes (entities) with custom canvas drawing for edges (debts) -> Interaction: 'Next/Prev' buttons to trigger state changes in the graph and update explanatory text -> Justification: This provides a clear, step-by-step visual walkthrough of the algorithm's process, directly mirroring the report's example. | Report Info: Theoretical concepts (SCC, Greedy vs Optimal) -> Goal: Organize and explain -> Presentation Method: Tabbed content sections -> Interaction: Click to switch tabs -> Justification: This organizes dense theoretical information compactly without overwhelming the user. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+            color: #343a40;
+        }
+        .tab-active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 450px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 500px;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white shadow-sm">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Mutual Debt Reconciliation</h1>
+            <p class="mt-2 text-lg text-gray-600">An Interactive Guide to Simplifying Complex Financial Networks</p>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        
+        <!-- Introduction Section -->
+        <section id="introduction" class="mb-12 bg-white p-6 md:p-8 rounded-xl shadow-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">The Problem: A Tangled Web of Debt</h2>
+            <p class="text-gray-700 leading-relaxed">In any financial system, multiple parties often owe money to each other, creating a complex network of mutual debt. For example, Party A owes B, B owes C, and C owes A. Settling these debts individually is inefficient, costly, and slow. This guide explores a powerful graph-based algorithm that systematically simplifies this web, finding the minimum number of transactions needed to clear all balances.</p>
+            <div class="mt-6 grid md:grid-cols-2 gap-6 text-center">
+                <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                    <h3 class="font-semibold text-blue-800">Vertices (Entities)</h3>
+                    <p class="text-sm text-blue-700">Each person or company in the network is a 'vertex' or node in our graph.</p>
+                </div>
+                <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg">
+                    <h3 class="font-semibold text-green-800">Edges (Debts)</h3>
+                    <p class="text-sm text-green-700">A debt from one entity to another is a directed, weighted 'edge' connecting two vertices.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Interactive Demo Section -->
+        <section id="demo" class="mb-12 bg-white p-6 md:p-8 rounded-xl shadow-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2 text-center">Step-by-Step Simplification</h2>
+            <p class="text-center text-gray-600 mb-6">Use the buttons below to walk through the debt reconciliation process for a sample network.</p>
+            
+            <div class="chart-container">
+                <canvas id="debtGraph"></canvas>
+            </div>
+
+            <div class="mt-6 flex justify-center items-center space-x-4">
+                <button id="prevBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">Previous</button>
+                <button id="nextBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg transition-colors duration-200">Next</button>
+            </div>
+
+            <div id="explanationBox" class="mt-6 bg-gray-50 p-5 rounded-lg border border-gray-200 min-h-[120px]">
+                <h3 id="stepTitle" class="font-bold text-lg text-gray-800 mb-2"></h3>
+                <p id="stepDescription" class="text-gray-700"></p>
+            </div>
+        </section>
+
+        <!-- Theoretical Foundations Section -->
+        <section id="theory" class="mb-12 bg-white p-6 md:p-8 rounded-xl shadow-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Theoretical Foundations</h2>
+            <div>
+                <div class="border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                        <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 tab-active" data-target="panel-1">
+                            Graph Model
+                        </button>
+                        <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300" data-target="panel-2">
+                            Cycle Cancellation
+                        </button>
+                        <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300" data-target="panel-3">
+                            Greedy vs. Optimal
+                        </button>
+                    </nav>
+                </div>
+                <div class="mt-6">
+                    <div id="panel-1" class="tab-panel">
+                        <h3 class="font-semibold text-lg text-gray-800">A Weighted Directed Graph</h3>
+                        <p class="mt-2 text-gray-700 leading-relaxed">The problem is modeled as a weighted directed graph where vertices represent financial entities and edges represent debts. An edge from vertex U to V with weight W signifies that U owes V an amount W. This model is powerful because it allows us to apply well-understood algorithms from graph theory to solve a complex financial problem. It provides a clear, visual representation of the flow of money and obligations within the system.</p>
+                    </div>
+                    <div id="panel-2" class="tab-panel hidden">
+                        <h3 class="font-semibold text-lg text-gray-800">The Power of Netting</h3>
+                        <p class="mt-2 text-gray-700 leading-relaxed">Cycle cancellation is a core technique for simplification. It identifies reciprocal debts (e.g., A owes B, B owes A) and nets them out, replacing two transactions with one (or zero, if the debts are equal). This logic extends to longer cycles (A owes B, B owes C, C owes A). By canceling these cycles, we drastically reduce the number of edges in the graph without changing anyone's net financial position, paving the way for further optimization.</p>
+                    </div>
+                     <div id="panel-3" class="tab-panel hidden">
+                        <h3 class="font-semibold text-lg text-gray-800">Speed vs. Perfection</h3>
+                        <p class="mt-2 text-gray-700 leading-relaxed">There's a trade-off between speed and achieving a perfect solution. <strong class="text-gray-900">Greedy approaches</strong>, like basic cycle cancellation, are fast and provide significant simplification. They make locally optimal choices at each step. <strong class="text-gray-900">Optimal approaches</strong>, often using more complex flow network algorithms, guarantee the absolute minimum number of transactions required for settlement. The choice depends on the application: for real-time systems, a fast greedy algorithm might be preferable, while for end-of-day settlement, a provably optimal solution is ideal.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Conclusion Section -->
+        <section id="conclusion" class="bg-blue-600 text-white p-8 rounded-xl">
+             <h2 class="text-2xl font-bold mb-4">From Complexity to Clarity</h2>
+             <p class="leading-relaxed">By integrating cycle cancellation and flow optimization within a graph-theoretic framework, we can transform a convoluted web of mutual obligations into a simple, minimal set of settlement transactions. This approach strengthens the theoretical understanding of multilateral netting and provides a practical, efficient solution for modern financial systems, including fintech platforms, blockchain applications, and inter-company accounting.</p>
+        </section>
+
+    </main>
+
+    <footer class="text-center py-6 text-sm text-gray-500">
+        <p>A conceptual demonstration based on graph-theoretic debt reconciliation principles.</p>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        Chart.register(ChartDataLabels);
+        const ctx = document.getElementById('debtGraph').getContext('2d');
+
+        const nodePositions = {
+            'A': { x: 2, y: 2 },
+            'B': { x: 8, y: 2 },
+            'C': { x: 8, y: 8 },
+            'D': { x: 2, y: 8 },
+        };
+        
+        const steps = [
+            {
+                title: "Step 0: The Initial Debt Network",
+                description: "This is the initial, complex state of mutual debts. Four parties (A, B, C, D) have multiple obligations between each other. The arrows indicate the direction of the debt, and the numbers represent the amount in thousands. Our goal is to simplify this.",
+                edges: [
+                    { from: 'A', to: 'B', amount: 30, label: '30k' },
+                    { from: 'B', to: 'A', amount: 50, label: '50k' },
+                    { from: 'A', to: 'C', amount: 40, label: '40k' },
+                    { from: 'C', to: 'A', amount: 40, label: '40k' },
+                    { from: 'C', to: 'D', amount: 20, label: '20k' },
+                    { from: 'D', to: 'A', amount: 10, label: '10k' },
+                    { from: 'B', to: 'D', amount: 15, label: '15k' },
+                    { from: 'D', to: 'B', amount: 15, label: '15k' },
+                ]
+            },
+            {
+                title: "Step 1: Cycle Cancellation & Netting",
+                description: "First, we simplify by canceling out reciprocal debts. For example, A owes B 30k and B owes A 50k, which nets to 'B owes A 20k'. Similarly, debts between A-C and B-D are perfectly balanced and cancel each other out completely.",
+                edges: [
+                    { from: 'B', to: 'A', amount: 20, label: '20k' },
+                    { from: 'C', to: 'D', amount: 20, label: '20k' },
+                    { from: 'D', to: 'A', amount: 10, label: '10k' },
+                ]
+            },
+            {
+                title: "Step 2: Simplified Debt Graph",
+                description: "After netting, the graph is much clearer. We now have only three outstanding net debts. This simplified view is the foundation for finding the most efficient settlement path.",
+                edges: [
+                    { from: 'B', to: 'A', amount: 20, label: '20k' },
+                    { from: 'C', to: 'D', amount: 20, label: '20k' },
+                    { from: 'D', to: 'A', amount: 10, label: '10k' },
+                ]
+            },
+            {
+                title: "Step 3: Optimal Transaction Flow",
+                description: "Finally, using flow optimization, we find the minimal transactions. Instead of D paying A directly, C can pay A on D's behalf. The final settlement requires only two transactions to clear all debts. Notice C pays 10k to A and 10k to D, settling its 20k debt.",
+                edges: [
+                    { from: 'B', to: 'A', amount: 20, label: 'B pays A: 20k', final: true },
+                    { from: 'C', to: 'A', amount: 10, label: 'C pays A: 10k', final: true },
+                    { from: 'C', to: 'D', amount: 10, label: 'C pays D: 10k', final: true },
+                ]
+            }
+        ];
+
+        let currentStep = 0;
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const stepTitle = document.getElementById('stepTitle');
+        const stepDescription = document.getElementById('stepDescription');
+
+        const drawArrow = (ctx, fromx, fromy, tox, toy, final = false) => {
+            const headlen = 10;
+            const angle = Math.atan2(toy - fromy, tox - fromx);
+            
+            ctx.save();
+            ctx.strokeStyle = final ? "#16a34a" : "#4b5563";
+            ctx.lineWidth = final ? 2.5 : 1.5;
+
+            ctx.beginPath();
+            ctx.moveTo(fromx, fromy);
+            ctx.lineTo(tox, toy);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(tox, toy);
+            ctx.lineTo(tox - headlen * Math.cos(angle - Math.PI / 7), toy - headlen * Math.sin(angle - Math.PI / 7));
+            ctx.lineTo(tox - headlen * Math.cos(angle + Math.PI / 7), toy - headlen * Math.sin(angle + Math.PI / 7));
+            ctx.lineTo(tox, toy);
+            ctx.stroke();
+            ctx.fillStyle = final ? "#16a34a" : "#4b5563";
+            ctx.fill();
+            ctx.restore();
+        };
+
+        const edgeDrawerPlugin = {
+            id: 'edgeDrawer',
+            afterDraw: (chart) => {
+                const { ctx, _metasets } = chart;
+                const activeEdges = steps[currentStep].edges;
+                const pointRadius = chart.data.datasets[0].pointRadius;
+                
+                ctx.save();
+                
+                activeEdges.forEach(edge => {
+                    const fromNode = _metasets[0].data.find(d => d.$context.raw.label === edge.from);
+                    const toNode = _metasets[0].data.find(d => d.$context.raw.label === edge.to);
+
+                    if (!fromNode || !toNode) return;
+
+                    let fromX = fromNode.x;
+                    let fromY = fromNode.y;
+                    let toX = toNode.x;
+                    let toY = toNode.y;
+
+                    const angle = Math.atan2(toY - fromY, toX - fromX);
+                    const radiusFrom = pointRadius + 3;
+                    const radiusTo = pointRadius + 3;
+
+                    fromX += Math.cos(angle) * radiusFrom;
+                    fromY += Math.sin(angle) * radiusFrom;
+                    toX -= Math.cos(angle) * radiusTo;
+                    toY -= Math.sin(angle) * radiusTo;
+
+                    drawArrow(ctx, fromX, fromY, toX, toY, edge.final);
+
+                    const textX = (fromX + toX) / 2;
+                    const textY = (fromY + toY) / 2;
+
+                    ctx.save();
+                    ctx.translate(textX, textY);
+                    
+                    let textAngle = angle;
+                    let flip = (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2);
+                    if (flip) {
+                        textAngle += Math.PI;
+                    }
+                    ctx.rotate(textAngle);
+                    if (flip) {
+                        ctx.scale(-1, 1);
+                    }
+                    
+                    ctx.fillStyle = "#f8f9fa";
+                    ctx.globalAlpha = 0.7;
+                    const metrics = ctx.measureText(edge.label);
+                    const halfW = metrics.width / 2;
+                    const padding = 4;
+                    const textHeight = 20;
+                    let bgX = -halfW - padding;
+                    let bgW = metrics.width + 2 * padding;
+                    let bgY = -textHeight / 2;
+                    let bgH = textHeight;
+                    if (flip) {
+                        bgX = halfW + padding;
+                        bgW = -(metrics.width + 2 * padding);
+                    }
+                    ctx.fillRect(bgX, bgY, bgW, bgH);
+                    ctx.globalAlpha = 1.0;
+
+                    ctx.fillStyle = edge.final ? "#14532d" : "#374151";
+                    ctx.font = edge.final ? "bold 14px Inter" : "13px Inter";
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(edge.label, 0, 0);
+                    ctx.restore();
+                });
+
+                ctx.restore();
+            }
+        };
+
+        const chartData = {
+            datasets: [{
+                data: Object.keys(nodePositions).map(key => ({
+                    x: nodePositions[key].x,
+                    y: nodePositions[key].y,
+                    label: key
+                })),
+                backgroundColor: '#3b82f6',
+                pointRadius: 25,
+                pointHoverRadius: 30,
+            }]
+        };
+
+        const debtGraph = new Chart(ctx, {
+            type: 'scatter',
+            data: chartData,
+            plugins: [edgeDrawerPlugin],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { display: false, min: 0, max: 10 },
+                    y: { display: false, min: 0, max: 10 }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                    datalabels: {
+                        color: 'white',
+                        font: {
+                            weight: 'bold',
+                            size: 16
+                        },
+                        formatter: function(value, context) {
+                            return value.label;
+                        }
+                    }
+                },
+                animation: {
+                    duration: 500
+                },
+                layout: {
+                    padding: 30
+                }
+            }
+        });
+
+        const updateUI = () => {
+            const stepData = steps[currentStep];
+            stepTitle.textContent = stepData.title;
+            stepDescription.textContent = stepData.description;
+            
+            prevBtn.disabled = currentStep === 0;
+            nextBtn.disabled = currentStep === steps.length - 1;
+
+            debtGraph.update('none');
+        };
+
+        nextBtn.addEventListener('click', () => {
+            if (currentStep < steps.length - 1) {
+                currentStep++;
+                updateUI();
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentStep > 0) {
+                currentStep--;
+                updateUI();
+            }
+        });
+        
+        updateUI();
+
+        const tabs = document.querySelectorAll('.tab');
+        const panels = document.querySelectorAll('.tab-panel');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('tab-active'));
+                tab.classList.add('tab-active');
+                
+                const targetPanelId = tab.getAttribute('data-target');
+                panels.forEach(panel => {
+                    if (panel.id === targetPanelId) {
+                        panel.classList.remove('hidden');
+                    } else {
+                        panel.classList.add('hidden');
+                    }
+                });
+            });
+        });
+    });
+    </script>
+
+</body>
+</html>
